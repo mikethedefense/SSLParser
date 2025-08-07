@@ -36,5 +36,6 @@ class TestCreationPage(App):
 
 
 root = Tk()
-app_instance = InitPage(root)
+app_instance = InitPage(root) # For testing. Will be changed to App(root) after
 root.mainloop()
+
