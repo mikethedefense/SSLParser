@@ -86,6 +86,8 @@ class InitPage(Frame):
 
             self.controller.frames[f'Config{i}'] = page
             page.grid(row=0, column=0, sticky='nsew')
+            page.row_counter.set(len(page.rules_list)+1)
+            page.rule_btn.grid(row = page.row_counter.get(), column = 0)
 
         self.controller.show_frame('Config0')
 
