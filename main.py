@@ -4,7 +4,7 @@ import json
 import sys
 import os
 
-# --- App structure ---
+# --- Rudimentary App structure ---
 # Tk (root window)
 # └── container Frame
 #     ├── InitPage Frame
@@ -147,6 +147,8 @@ class TestCreationPage(Frame):
             "procedure_name": None,
             "configs": []
         }
+        if not os.path.exists('Test Procedures'):
+            os.makedirs('Test Procedures')
 
         for page in self.controller.frames.values():
             code_string = (
