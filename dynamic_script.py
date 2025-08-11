@@ -3,9 +3,10 @@ from tkinter import *
 # Tk (root window)
 # └── container Frame
 #     ├── InitPage Frame
-#     └── TestCreationPage Frames (can have multiple depending on the amount of congigs)
+#     └── TestCreationPage Frames
 
-# TODO: convert the rules to SSL scripting
+# TODO: convert the rules to SSL scripting and save to txt file
+# TODO: add defined variables data to csv file
 
 class App: # Master Controller
     def __init__(self,master):
@@ -62,9 +63,11 @@ class TestCreationPage(Frame):
         self.index = index
         self.total = total
         self.rule_btn = Button(self, text = 'Add Rule', command = self.add_rule)
-        self.rule_btn.grid(row=0, column=0)
+        self.rule_btn.grid(row=1, column=0)
         self.row_counter = IntVar()
-        self.row_counter.set(0)
+        self.row_counter.set(1)
+        self.config_label = Label(self, text = f'Config {self.index + 1}', font = ('arial', 20), pady = 5)
+        self.config_label.grid(row = 0, column = 0)
 
         # Config Pages Cycling
 
