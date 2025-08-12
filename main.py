@@ -242,7 +242,7 @@ class TestCreationPage(Frame):
                             if cond_data['value'].isdigit():
                                 cond_str = f"{cond_data['variable']} {ssl_op} {cond_data["value"]}" # Combine the expressions
                             elif cond_data['value'].isalpha():
-                                cond_str = f'{cond_data['variable']} {cond_data['operator']} "{cond_data['value']}"'
+                                cond_str = f'{cond_data['variable']} {ssl_op} "{cond_data['value']}"'
                             if cond_data['logic_op']:
                                 cond_str += f' {cond_data['logic_op'].lower()} '
                             conditions_data.append(cond_data)
