@@ -4,11 +4,8 @@ import json
 import sys
 import os
 
-# --- Rudimentary App structure ---
-# Tk (root window)
-# └── container Frame
-#     ├── InitPage Frame
-#     └── TestCreationPage Frames
+# TODO: build repeat until functionality
+
 
 class App: # Master Controller
     def __init__(self,master):
@@ -77,10 +74,39 @@ class InitPage(Frame):
                 if rule["type"] == "Set":
                     r.signal_entry_variable.set(rule["signal"])
                     r.sig_val_entry_variable.set(rule["value"])
-                elif rule["type"] == "Takeoff":
-                    r.v_rot_entry_variable.set(rule["vrot"])
-                    r.pitch_entry_variable.set(rule["pitch"])
-                r.rule_frame.grid(row=page.row_counter.get(), column=0)
+                elif rule["type"] == "Wait":
+                    r.wait_time.set(rule["wait_time"])
+                elif rule["type"] == "Prompt":
+                    r.prompt.set(rule["prompt"])
+                elif rule['type'] == 'If':
+
+                    # Populate the conditions
+                    for j,cond_data in enumerate(rule['conditions']):
+                        if j>0:
+                            r.add_conditions_row()
+                        cond_row = r.conditions[j]
+                        cond_row.var_name.set(cond_data['variable'])
+                        cond_row.operator.set(cond_data['operator'])
+                        cond_row.value.set(cond_data['value'])
+                        cond_row.logic_op.set(cond_data['logic_op'])
+                    # Populate sub-rules
+                    for sub in rule['sub_rules']:
+                        sub_rule = _RulesFrame(r.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Repeat Until'])
+                        sub_rule.selected_option.set(sub['type'])
+                        if sub['type'] == 'Set':
+                            sub_rule.signal_entry_variable.set(sub['signal'])
+                            sub_rule.sig_val_entry_variable.set(sub['value'])
+                        elif sub['type'] == 'Wait':
+                            sub_rule.wait_time.set(sub['wait_time'])
+                        elif sub['type'] == 'Prompt':
+                            sub_rule.prompt.set(sub['prompt'])
+                        elif sub['type'] == 'Repeat Until':
+                            # TODO
+                            pass
+                        sub_rule.rule_frame.grid(row = len(r.sub_rules) + 1, column =1, padx = (20,0))
+                        r.sub_rules.append(sub_rule)
+
+                r.rule_frame.grid(row=page.row_counter.get(), column=0, sticky = 'w')
                 page.rules_list.append(r)
                 page.row_counter.set(page.row_counter.get() + 1)
 
@@ -111,7 +137,7 @@ class TestCreationPage(Frame):
         self.total = total
 
         self.rule_btn = Button(self, text = 'Add Rule', command = self.add_rule)
-        self.rule_btn.grid(row=1, column=0)
+        self.rule_btn.grid(row=1, column=0, stick = 'w')
         self.row_counter = IntVar()
         self.row_counter.set(1)
         self.rules_list = []
@@ -136,7 +162,7 @@ class TestCreationPage(Frame):
 
     def add_rule(self,*args):
         rule = _RulesFrame(self)
-        rule.rule_frame.grid(row=self.row_counter.get(), column=0)
+        rule.rule_frame.grid(row=self.row_counter.get(), column=0, sticky = 'w')
         self.rules_list.append(rule)
         self.rule_btn.grid(row = self.row_counter.get() + 1, column = 0)
         self.row_counter.set(self.row_counter.get() + 1)
@@ -182,15 +208,90 @@ class TestCreationPage(Frame):
                         elif val.isalpha():
                             code_string += f'{sig} =: "{val}";\n'
 
-                    elif rule.selected_option.get() == 'Takeoff':
-                        vrot = rule.v_rot_entry_variable.get()
-                        alt = rule.pitch_entry_variable.get()
+                    elif rule.selected_option.get() == 'Wait':
+                        wait_time = rule.wait_time.get()
                         config_data["rules"].append({
-                            "type": "Takeoff",
-                            "vrot": vrot,
-                            "pitch": alt
+                            "type": "Wait",
+                            "wait_time": wait_time,
                         })
-                        code_string += f'takeoff({vrot}, {alt});\n'
+                        code_string += f'wait({wait_time},True );\n'
+                    elif rule.selected_option.get() == 'Prompt':
+                        prompt = rule.prompt.get()
+                        config_data["rules"].append({
+                            "type": "Prompt",
+                            "prompt": prompt,
+                        })
+                        code_string += f'prompt("{prompt}");\n'
+                    elif rule.selected_option.get() == 'If':
+                        conditions_data = []
+                        cond_strings = [] # to be joined for ssl code.
+                        op_map = {   # Mapping gui operators to the SSL
+                            'Equals': '=',
+                            'Greater Than': ">",
+                            'Less Than': "<",
+                            'Not Equals': '<>'
+                        }
+                        for cond in rule.conditions:
+                            cond_data = {
+                                "variable":cond.var_name.get(),
+                                "operator":cond.operator.get(),
+                                "value":cond.value.get(),
+                                "logic_op": cond.logic_op.get()
+                            }
+                            ssl_op = op_map.get(cond_data['operator']) # Lookup the matching operator
+                            if cond_data['value'].isdigit():
+                                cond_str = f"{cond_data['variable']} {ssl_op} {cond_data["value"]}" # Combine the expressions
+                            elif cond_data['value'].isalpha():
+                                cond_str = f'{cond_data['variable']} {cond_data['operator']} "{cond_data['value']}"'
+                            if cond_data['logic_op']:
+                                cond_str += f' {cond_data['logic_op'].lower()} '
+                            conditions_data.append(cond_data)
+                            cond_strings.append(cond_str)
+                        if_rule_data = {
+                            "type": "If",
+                            "conditions": conditions_data,
+                            "sub_rules": []
+                        }
+                        ssl_condition = "".join(cond_strings).strip() # Remove whitespace
+                        code_string += f'if {ssl_condition} then\n'
+
+                        # Handle sub rules
+                        for sub_rule in rule.sub_rules:
+                            if sub_rule.selected_option.get() == 'Set':
+                                sig = sub_rule.signal_entry_variable.get()
+                                val = sub_rule.sig_val_entry_variable.get()
+                                if_rule_data['sub_rules'].append({
+                                    'type': 'Set',
+                                    'signal': sig,
+                                    'value': val
+                                })
+                                if val.isdigit():
+                                    code_string += f'\t {sig} =: {val};\n'
+                                else:
+                                    code_string += f'\t {sig} =: "{val}";\n'
+                            elif sub_rule.selected_option.get() == 'Wait':
+                                wait_time =sub_rule.wait_time.get()
+                                if_rule_data['sub_rules'].append({
+                                    'type': 'Wait',
+                                    'wait_time': wait_time,
+                                })
+                                code_string += f'\t wait({wait_time},True );\n'
+                            elif sub_rule.selected_option.get() == 'Prompt':
+                                prompt = sub_rule.prompt.get()
+                                if_rule_data['sub_rules'].append({
+                                    'type': 'Prompt',
+                                    'prompt': prompt,
+                                })
+                                code_string += f'\t prompt("{prompt}");\n'
+                            elif sub_rule.selected_option.get() == 'Repeat Until':
+                                # TODO
+                                pass
+                        code_string += 'end if \n'
+                        config_data["rules"].append(if_rule_data)
+
+
+
+
 
                 # Create the config ssi files
                 ssi_config_path = os.path.join("Test Procedures",tp_name, f'Config{page.index}.ssi')
@@ -245,60 +346,114 @@ class _RulesFrame:
     """
     Private class used to define the rules base
     """
-    def __init__(self,controller):
+    def __init__(self,controller, options = ['Set','Wait','Prompt','If', 'Repeat Until']):
         self.controller = controller
 
         # Variables
-        options = ['Takeoff', 'Set'] # Add more options here
-        self.selected_option = StringVar()
-        self.pitch_entry_variable = IntVar()
-        self.signal_entry_variable = StringVar()
-        self.sig_val_entry_variable = StringVar()
-        self.v_rot_entry_variable = IntVar()
+        self.options = options
 
         # Frame Defined
         self.rule_frame = Frame(controller)
 
         # Labels and entries to use (more can be added)
-        self.selector = OptionMenu(self.rule_frame, self.selected_option, *options)
+        self.selected_option = StringVar()
+        self.selector = OptionMenu(self.rule_frame, self.selected_option, *self.options)
         self.selector.grid(row=0, column=0)
+        self.del_btn = Button(self.rule_frame, text='Delete', command=self.delete_rule)
 
-        # Rules - more can be added
-        self.v_rot_entry = Entry(self.rule_frame, textvariable = self.v_rot_entry_variable)
-        self.knots_label = Label(self.rule_frame, text = 'Knots')
-        self.pitch_label = Label(self.rule_frame, text = 'Degrees')
-        self.pitch_entry = Entry(self.rule_frame, textvariable = self.pitch_entry_variable)
+        # ----Rules----
+
+        # Set
+        self.signal_entry_variable = StringVar()
+        self.sig_val_entry_variable = StringVar()
         self.signal_entry = Entry(self.rule_frame, textvariable = self.signal_entry_variable)
+        self.to_label = Label(self.rule_frame, text = 'to')
         self.sig_val_entry = Entry(self.rule_frame, textvariable = self.sig_val_entry_variable)
 
-        self.del_btn = Button(self.rule_frame, text = 'Delete', command = self.delete_rule)
+
+        # Wait
+        self.wait_time = IntVar()
+        self.wait_entry = Entry(self.rule_frame, textvariable = self.wait_time)
+        self.seconds_label = Label(self.rule_frame, text = 'seconds')
+
+        # Prompt
+        self.prompt = StringVar()
+        self.prompt_entry = Entry(self.rule_frame, textvariable = self.prompt)
 
         # Trace
         self.selected_option.trace_add('write', callback = self.selector_callback)
 
     def selector_callback(self, *args):
         self.del_btn.grid(row=0, column=5)
-
-        # Needs to be updated according to new rules added.
-        if self.selected_option.get() == 'Takeoff':
-            self.v_rot_entry.grid(row = 0, column =1)
-            self.knots_label.grid(row=0, column=2)
-            self.pitch_entry.grid(row=0, column=3)
-            self.pitch_label.grid(row=0, column=4)
-            self.signal_entry.grid_forget()
-            self.sig_val_entry.grid_forget()
-        elif self.selected_option.get() == 'Set':
+        for widget in self.rule_frame.grid_slaves():
+            if widget not in (self.selector, self.del_btn):
+                widget.grid_forget()
+        if self.selected_option.get() == 'Set':
             self.signal_entry.grid(row=0, column=2)
-            self.sig_val_entry.grid(row=0, column=3)
-            self.v_rot_entry.grid_forget()
-            self.knots_label.grid_forget()
-            self.pitch_entry.grid_forget()
-            self.pitch_label.grid_forget()
+            self.to_label.grid(row=0, column=3)
+            self.sig_val_entry.grid(row=0, column=4)
+        elif self.selected_option.get() == 'Wait':
+            self.wait_entry.grid(row = 0, column =2)
+            self.seconds_label.grid(row = 0, column = 3)
+        elif self.selected_option.get() == 'Prompt':
+            self.prompt_entry.grid(row = 0, column = 2)
+        elif self.selected_option.get() == 'If':
+            # Handling logic containers
+            self.if_container = Frame(self.rule_frame)
+            self.if_container.grid(row = 0,column = 1)
+            self.conditions = []
+            self.add_conditions_row()
+            # Handling sub-rule Containers
+            self.sub_rules_container = Frame(self.rule_frame)
+            self.sub_rules_container.grid(row = 2, column = 1)
+            self.add_sub_rule_btn = Button(self.sub_rules_container, text = 'Add Sub-Rule', command = self.add_sub_rule)
+            self.add_sub_rule_btn.grid(row =0, column = 0)
+            self.sub_rules = []
+        elif self.selected_option.get() == 'Repeat Until':
+            # TODO
+            pass
+
+
+        elif self.selected_option.get() == 'Repeat Until':
+            pass
+    def add_sub_rule(self):
+        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Repeat Until'])
+        sub_rule.rule_frame.grid(row = len(self.sub_rules)+1, column = 1, padx = (20,0))
+        self.add_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=1, pady = (0,25))
+        self.sub_rules.append(sub_rule)
+
+    def add_conditions_row(self):
+        row = _ConditionRow(self.if_container, self.on_logic_change)
+        self.conditions.append(row)
+        row.set_grid(row = 0, column = len(self.conditions)-1)
+
+    def on_logic_change(self,row):
+        if row is self.conditions[-1] and row.logic_op.get() in ('AND', 'OR'):
+            self.add_conditions_row()
+
     def delete_rule(self):
         self.rule_frame.destroy()
 
 
+class _ConditionRow:
+    """
+    Private class used to define the boolean logic for conditionals (and loops)
+    """
+    def __init__(self, parent, on_logic_change): # on_logic_change is the callback function for the trace
+        self.frame = Frame(parent)
+        self.operator = StringVar(value = "Equals")
+        self.logic_op = StringVar(value = "")
+        self.var_name = StringVar()
+        self.value = StringVar()
 
+        Entry(self.frame, textvariable=self.var_name, width=10).grid(row=0, column=0)
+        OptionMenu(self.frame, self.operator, "Equals", "Greater Than", "Less Than", "Not Equals").grid(row=0, column=1)
+        Entry(self.frame, textvariable=self.value, width=10).grid(row=0, column=2)
+        OptionMenu(self.frame, self.logic_op, "", "AND", "OR").grid(row=0, column=3)
+
+        self.logic_op.trace_add('write', lambda *a: on_logic_change(self))
+    def set_grid(self, **kwargs):
+        self.frame.grid(**kwargs)
 
 root = Tk()
 app_instance = App(root)
