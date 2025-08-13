@@ -4,6 +4,7 @@ import json
 import sys
 import os
 
+# TODO: fix the loading function
 # TODO: add if-else capability
 # TODO: add database functionality (look-up tables)
 
@@ -56,9 +57,12 @@ class App: # Master Controller
                 # Load sub-rules recursively
                 if 'sub_rules' in rule:
                     rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
+                rf.add_if_sub_rule_btn.grid(row=len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
 
             elif rule['type'] == 'Loop':
                 rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
+                rf.add_loop_sub_rule_btn.grid(row=len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
+
 
             rf.rule_frame.grid(row=len(frames) + 1, column=0, sticky='w')
             frames.append(rf)
@@ -331,8 +335,11 @@ class _RulesFrame:
         # Variables
         self.options = options
 
-        # Frame Defined
+        # Frames Defined
         self.rule_frame = Frame(controller)
+        self.sub_rules_container = Frame(self.rule_frame)
+        self.if_container = Frame(self.rule_frame)
+
 
         # Labels and entries to use (more can be added)
         self.selected_option = StringVar()
@@ -359,6 +366,12 @@ class _RulesFrame:
         self.prompt = StringVar()
         self.prompt_entry = Entry(self.rule_frame, textvariable = self.prompt)
 
+        # If
+        self.add_if_sub_rule_btn = Button(self.sub_rules_container, text='Add If Sub-Rule', command=self.add_if_sub_rule)
+
+        # Loop
+        self.add_loop_sub_rule_btn = Button(self.sub_rules_container, text='Add Loop Sub-Rule',command=self.add_loop_sub_rule)
+
         # Trace
         self.selected_option.trace_add('write', callback = self.selector_callback)
 
@@ -367,32 +380,30 @@ class _RulesFrame:
         for widget in self.rule_frame.grid_slaves():
             if widget not in (self.selector, self.del_btn):
                 widget.grid_forget()
+
         if self.selected_option.get() == 'Set':
             self.signal_entry.grid(row=0, column=2)
             self.to_label.grid(row=0, column=3)
             self.sig_val_entry.grid(row=0, column=4)
+
         elif self.selected_option.get() == 'Wait':
             self.wait_entry.grid(row = 0, column =2)
             self.seconds_label.grid(row = 0, column = 3)
+
         elif self.selected_option.get() == 'Prompt':
             self.prompt_entry.grid(row = 0, column = 2)
+
         elif self.selected_option.get() == 'If':
-            # Handling logic containers
-            self.if_container = Frame(self.rule_frame)
             self.if_container.grid(row = 0,column = 1)
             self.add_conditions_row()
-            # Handling sub-rule Containers
-            self.sub_rules_container = Frame(self.rule_frame)
-            self.sub_rules_container.grid(row = 2, column = 1)
-            self.add_if_sub_rule_btn = Button(self.sub_rules_container, text = 'Add If Sub-Rule', command = self.add_if_sub_rule)
-            self.add_if_sub_rule_btn.grid(row =0, column = 0, sticky = 'w', pady = (20,20))
-        elif self.selected_option.get() == 'Loop':
-            self.sub_rules_container = Frame(self.rule_frame)
             self.sub_rules_container.grid(row = 2, column = 1, sticky = 'w')
-            self.add_loop_sub_rule_btn = Button(self.sub_rules_container, text = 'Add Loop Sub-Rule', command = self.add_loop_sub_rule)
+            self.add_if_sub_rule_btn.grid(row =0, column = 0, sticky = 'w', pady = (20,20))
+
+        elif self.selected_option.get() == 'Loop':
+            self.sub_rules_container.grid(row = 2, column = 1, sticky = 'w')
             self.add_loop_sub_rule_btn.grid(row = 0, column = 0, sticky ='w', pady = (20,20))
+
         elif self.selected_option.get() == 'Exit When':
-            self.if_container = Frame(self.rule_frame)
             self.if_container.grid(row = 0, column=1)
             self.add_conditions_row()
 
@@ -403,10 +414,9 @@ class _RulesFrame:
         self.sub_rules.append(sub_rule)
     def add_loop_sub_rule(self):
         sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'If', 'Exit When'], indent_level = self.indent_level + 1)
-        sub_rule.rule_frame.grid(row=len(self.sub_rules) + 1, column=1, sticky = 'w')
+        sub_rule.rule_frame.grid(row=len(self.sub_rules) + 1, column=0, sticky = 'w')
         self.add_loop_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
         self.sub_rules.append(sub_rule)
-
 
     def add_conditions_row(self):
         row = _ConditionRow(self.if_container, self.on_logic_change)
