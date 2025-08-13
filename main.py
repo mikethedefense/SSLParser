@@ -1,11 +1,10 @@
 from tkinter import *
 from tkinter import filedialog
+from tkinter import messagebox
 import json
 import sys
 import os
 
-# TODO: fix the loading function
-# TODO: add if-else capability
 # TODO: add database functionality (look-up tables)
 
 class App: # Master Controller
@@ -63,12 +62,15 @@ class App: # Master Controller
                 rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
                 rf.add_loop_sub_rule_btn.grid(row=len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
 
+            elif rule['type'] == 'Else':
+                rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
+                rf.add_else_sub_rule_btn.grid(row = len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
 
             rf.rule_frame.grid(row=len(frames) + 1, column=0, sticky='w')
             frames.append(rf)
         return frames
 
-    def export_rule_to_json_and_ssi(self,rule_frame, indent=0):
+    def export_rule_to_json_and_ssi(self,rule_frame, next_frame =None, indent=0):
         """Returns (json_data, ssi_code) for a single _RulesFrame"""
         prefix = "\t" * indent
         rule_type = rule_frame.selected_option.get()
@@ -116,26 +118,41 @@ class App: # Master Controller
             # Sub Rules
             sub_json = []
             sub_code = ""
-            for sr in rule_frame.sub_rules:
-                sj, sc = self.export_rule_to_json_and_ssi(sr, indent + 1)
+            for idx,sr in enumerate(rule_frame.sub_rules):
+                next_sr = rule_frame.sub_rules[idx + 1] if idx+1 < len(rule_frame.sub_rules) else None
+                sj, sc = self.export_rule_to_json_and_ssi(sr,next_sr,indent + 1)
                 sub_json.append(sj)
                 sub_code += sc
 
             json_data = {"type": rule_type, "conditions": conds, "sub_rules": sub_json}
-
             if rule_type == 'If':
-                return json_data, f"{prefix}if {''.join(cond_strs)} then\n{sub_code}{prefix}end if\n"
+                if next_frame and next_frame.selected_option.get() == 'Else':
+                    return json_data, f"{prefix}if {''.join(cond_strs)} then\n{sub_code}{prefix}\n"
+                else:
+                    return json_data, f"{prefix}if {''.join(cond_strs)} then\n{sub_code}{prefix}end if;\n"
+
             elif rule_type == 'Exit When':
                 return json_data, f"{prefix}exit when {''.join(cond_strs)};\n"
 
         elif rule_type == 'Loop':
             sub_json = []
             sub_code = ""
-            for sr in rule_frame.sub_rules:
-                sj, sc = self.export_rule_to_json_and_ssi(sr, indent + 1)
+            for idx,sr in enumerate(rule_frame.sub_rules):
+                next_sr = rule_frame.sub_rules[idx + 1] if idx + 1 < len(rule_frame.sub_rules) else None
+                sj, sc = self.export_rule_to_json_and_ssi(sr, next_sr, indent + 1)
                 sub_json.append(sj)
                 sub_code += sc
-            return {"type": "Loop", "sub_rules": sub_json}, f"{prefix}loop\n{sub_code}{prefix}end loop\n"
+            return {"type": "Loop", "sub_rules": sub_json}, f"{prefix}loop\n{sub_code}{prefix}end loop;\n"
+
+        elif rule_type == 'Else':
+            sub_json = []
+            sub_code = ""
+            for idx,sr in enumerate(rule_frame.sub_rules):
+                next_sr = rule_frame.sub_rules[idx + 1] if idx + 1 < len(rule_frame.sub_rules) else None
+                sj,sc = self.export_rule_to_json_and_ssi(sr, next_sr, indent + 1)
+                sub_json.append(sj)
+                sub_code += sc
+            return {'type': 'Else', 'sub_rules': sub_json}, f'{prefix}else\n{sub_code}{prefix}end if;\n'
 
 
 class InitPage(Frame):
@@ -268,8 +285,14 @@ class TestCreationPage(Frame):
                 config_data = {"rules": []}
                 code_string += f'\n-- Config {page.index + 1}\n'
 
-                for rule in page.rules_list:
-                    json_rule, ssi_code = self.controller.export_rule_to_json_and_ssi(rule)
+                for i, rule in enumerate(page.rules_list):
+                    next_rule = page.rules_list[i+1] if i+1 < len(page.rules_list) else None
+                    # Check if else is placed without preceding if:
+                    if rule.selected_option.get() == 'Else':
+                        if not (i>0 and page.rules_list[i-1].selected_option.get() == 'If'):
+                            messagebox.showerror('Else found without matching if')
+                            raise ValueError('Else found without matching if')
+                    json_rule, ssi_code = self.controller.export_rule_to_json_and_ssi(rule, next_rule)
                     config_data["rules"].append(json_rule)
                     code_string += ssi_code
 
@@ -326,7 +349,7 @@ class _RulesFrame:
     """
     Private class used to define the rules base
     """
-    def __init__(self,controller, options = ['Set','Wait','Prompt','If', 'Loop'], indent_level = 0):
+    def __init__(self,controller, options = ['Set','Wait','Prompt','If', 'Else', 'Loop'], indent_level = 0):
         self.controller = controller
         self.indent_level = indent_level
         self.sub_rules = []
@@ -369,6 +392,9 @@ class _RulesFrame:
         # If
         self.add_if_sub_rule_btn = Button(self.sub_rules_container, text='Add If Sub-Rule', command=self.add_if_sub_rule)
 
+        # Else
+        self.add_else_sub_rule_btn = Button(self.sub_rules_container, text = 'Add Else Sub-Rule', command = self.add_else_sub_rule)
+
         # Loop
         self.add_loop_sub_rule_btn = Button(self.sub_rules_container, text='Add Loop Sub-Rule',command=self.add_loop_sub_rule)
 
@@ -407,15 +433,26 @@ class _RulesFrame:
             self.if_container.grid(row = 0, column=1)
             self.add_conditions_row()
 
+        elif self.selected_option.get() == 'Else':
+            self.sub_rules_container.grid(row = 2, column = 1, sticky = 'w')
+            self.add_else_sub_rule_btn.grid(row = 0, column = 0, sticky = 'w', pady = (20,20))
+
+
     def add_if_sub_rule(self): # For if statement
         sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Loop'], indent_level = self.indent_level + 1)
         sub_rule.rule_frame.grid(row = len(self.sub_rules)+1, column = 0, sticky = 'w')
         self.add_if_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
         self.sub_rules.append(sub_rule)
     def add_loop_sub_rule(self):
-        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'If', 'Exit When'], indent_level = self.indent_level + 1)
+        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'If', 'Else', 'Exit When'], indent_level = self.indent_level + 1)
         sub_rule.rule_frame.grid(row=len(self.sub_rules) + 1, column=0, sticky = 'w')
         self.add_loop_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
+        self.sub_rules.append(sub_rule)
+
+    def add_else_sub_rule(self):
+        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'If', 'Loop'], indent_level = self.indent_level + 1)
+        sub_rule.rule_frame.grid(row=len(self.sub_rules) + 1, column=0, sticky='w')
+        self.add_else_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
         self.sub_rules.append(sub_rule)
 
     def add_conditions_row(self):
