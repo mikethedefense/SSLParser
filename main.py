@@ -28,10 +28,12 @@ class App: # Master Controller
         frame.tkraise()
 
     # Recursive Helpers
-    def load_rules_from_data(self,parent_container, rules_data, indent=0):
+    def load_rules_from_data(self,parent_container, rules_data, indent=0, owner = None):
         frames = []
+        if owner is None:
+            owner = parent_container
         for rule in rules_data:
-            rf = _RulesFrame(parent_container, indent_level=indent)
+            rf = _RulesFrame(parent_container, indent_level=indent, owner = owner)
             rf.selected_option.set(rule['type'])
 
             if rule['type'] == 'Set':
@@ -58,15 +60,15 @@ class App: # Master Controller
                     cond_row.logic_op.set(cond_data['logic_op'])
                 # Load sub-rules recursively
                 if 'sub_rules' in rule:
-                    rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
+                    rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1, owner = rf)
                 rf.add_if_sub_rule_btn.grid(row=len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
 
             elif rule['type'] == 'Loop':
-                rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
+                rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1, owner = rf)
                 rf.add_loop_sub_rule_btn.grid(row=len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
 
             elif rule['type'] == 'Else':
-                rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1)
+                rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1, owner = rf)
                 rf.add_else_sub_rule_btn.grid(row = len(rf.sub_rules) + 1, column=0, sticky='w', pady=(20, 20))
 
             rf.rule_frame.grid(row=len(frames) + 1, column=0, sticky='w')
@@ -81,13 +83,19 @@ class App: # Master Controller
         if rule_type == 'Set':
             sig = rule_frame.signal_entry_variable.get()
             val = rule_frame.sig_val_entry_variable.get()
-            json_data = {"type": "Set", "signal": sig, "value": val}
-            code = f'{prefix}{sig} =: {val if val.isdigit() else f'"{val}"'};\n'
+            var = rule_frame.var_type.get()
+            json_data = {"type": "Set", "signal": sig, "value": val, 'var_type': var}
+            if var == 'Signal':
+                code = f'{prefix}{sig} := {val if val.isdigit() else f'"{val}"'};\n'
+            elif var == 'Sim Variable (Integer)':
+                code = f'{prefix}ns_write_integer("{sig}",{val});\n'
+            elif var == 'Sim Variable (Float)':
+                code = f'{prefix}ns_write_float("{sig}",{val});\n'
             return json_data, code
 
         elif rule_type == 'Wait':
             wt = rule_frame.wait_time.get()
-            return {"type": "Wait", "wait_time": wt}, f"{prefix}wait(FALSE), {wt};\n"
+            return {"type": "Wait", "wait_time": wt}, f"{prefix}wait(FALSE), {wt} seconds;\n"
 
         elif rule_type == 'Prompt':
             p = rule_frame.prompt.get()
@@ -219,7 +227,7 @@ class InitPage(Frame):
         # Create pages from JSON
         for i, cfg in enumerate(data["configs"]):
             page = TestCreationPage(self.controller.container, self.controller, i, total)
-            page.rules_list = self.controller.load_rules_from_data(page, cfg['rules'])
+            page.rules_list = self.controller.load_rules_from_data(page, cfg['rules'], owner = page)
             for idx, rule_frame in enumerate(page.rules_list):
                 rule_frame.rule_frame.grid(row = idx + 1, column = 0, sticky = 'w')
 
@@ -275,7 +283,7 @@ class TestCreationPage(Frame):
 
 
     def add_rule(self,*args):
-        rule = _RulesFrame(self)
+        rule = _RulesFrame(self, owner = self)
         rule.rule_frame.grid(row=self.row_counter.get(), column=0, sticky = 'w')
         self.rules_list.append(rule)
         self.rule_btn.grid(row = self.row_counter.get() + 1, column = 0)
@@ -296,9 +304,9 @@ class TestCreationPage(Frame):
 
         for page in self.controller.frames.values():
             code_string = (
-                'if file_exists(base.ssi) then\n'
-                '\tinclude base.ssi;\n'
-                'end if\n'
+                'if file_exist("base.ssi") then\n'
+                '\tinclude "base.ssi";\n'
+                'end if;\n'
             )
             if isinstance(page, InitPage):
                 data["procedure_name"] = page.test_procedure_name.get()
@@ -310,7 +318,7 @@ class TestCreationPage(Frame):
             elif isinstance(page, TestCreationPage):
                 config_data = {"rules": []}
                 code_string += f'\n-- Config {page.index + 1}\n'
-                code_string += f'init("{data['location']}", {data['state']})\n'
+                code_string += f'init("{data['location']}", {data['state']});\n'
 
                 for i, rule in enumerate(page.rules_list):
                     next_rule = page.rules_list[i+1] if i+1 < len(page.rules_list) else None
@@ -376,9 +384,10 @@ class _RulesFrame:
     """
     Private class used to define the rules base
     """
-    def __init__(self,controller, options = ['Set','Wait','Prompt','Log', 'If', 'Else', 'Loop'], indent_level = 0):
+    def __init__(self,controller, options = ['Set','Wait','Prompt','Log', 'If', 'Else', 'Loop'], indent_level = 0, owner = None):
         self.controller = controller
         self.indent_level = indent_level
+        self.owner = owner
         self.sub_rules = []
         self.conditions = []
 
@@ -391,20 +400,25 @@ class _RulesFrame:
         self.if_container = Frame(self.rule_frame)
 
 
-        # Labels and entries to use (more can be added)
+        # Options, Delete and Add Rule Below
         self.selected_option = StringVar()
         self.selector = OptionMenu(self.rule_frame, self.selected_option, *self.options)
         self.selector.grid(row=0, column=0, padx = (self.indent_level * 20,0))
         self.del_btn = Button(self.rule_frame, text='Delete', command=self.delete_rule)
+        self.add_rule_below_btn = Button(self.rule_frame, text = 'Add Rule Below', command = self.add_rule_below)
 
         # ----Rules----
 
         # Set
         self.signal_entry_variable = StringVar()
         self.sig_val_entry_variable = StringVar()
+        self.var_type = StringVar()
         self.signal_entry = Entry(self.rule_frame, textvariable = self.signal_entry_variable)
         self.to_label = Label(self.rule_frame, text = 'to')
         self.sig_val_entry = Entry(self.rule_frame, textvariable = self.sig_val_entry_variable)
+        self.var_type_menu  = OptionMenu(self.rule_frame, self.var_type, 'Sim Variable (Integer)', 'Sim Variable (Float)', 'Signal')
+        self.as_label = Label(self.rule_frame, text = 'as')
+
 
 
         # Wait
@@ -433,15 +447,18 @@ class _RulesFrame:
         self.selected_option.trace_add('write', callback = self.selector_callback)
 
     def selector_callback(self, *args):
-        self.del_btn.grid(row=0, column=5)
+        self.del_btn.grid(row=0, column=7)
+        self.add_rule_below_btn.grid(row = 0, column = 8)
         for widget in self.rule_frame.grid_slaves():
-            if widget not in (self.selector, self.del_btn):
+            if widget not in (self.selector, self.del_btn, self.add_rule_below_btn):
                 widget.grid_forget()
 
         if self.selected_option.get() == 'Set':
             self.signal_entry.grid(row=0, column=2)
             self.to_label.grid(row=0, column=3)
             self.sig_val_entry.grid(row=0, column=4)
+            self.as_label.grid(row=0, column=5)
+            self.var_type_menu.grid(row=0, column=6)
 
         elif self.selected_option.get() == 'Wait':
             self.wait_entry.grid(row = 0, column =2)
@@ -473,21 +490,50 @@ class _RulesFrame:
 
 
     def add_if_sub_rule(self): # For if statement
-        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Log', 'Loop'], indent_level = self.indent_level + 1)
+        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Log', 'Loop'], indent_level = self.indent_level + 1, owner = self)
         sub_rule.rule_frame.grid(row = len(self.sub_rules)+1, column = 0, sticky = 'w')
         self.add_if_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
         self.sub_rules.append(sub_rule)
     def add_loop_sub_rule(self):
-        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Log', 'If', 'Else', 'Exit When'], indent_level = self.indent_level + 1)
+        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Log', 'If', 'Else', 'Exit When'], indent_level = self.indent_level + 1, owner = self)
         sub_rule.rule_frame.grid(row=len(self.sub_rules) + 1, column=0, sticky = 'w')
         self.add_loop_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
         self.sub_rules.append(sub_rule)
 
     def add_else_sub_rule(self):
-        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Log', 'If', 'Loop'], indent_level = self.indent_level + 1)
+        sub_rule = _RulesFrame(self.sub_rules_container, ['Set', 'Wait', 'Prompt', 'Log', 'If', 'Loop'], indent_level = self.indent_level + 1, owner = self)
         sub_rule.rule_frame.grid(row=len(self.sub_rules) + 1, column=0, sticky='w')
         self.add_else_sub_rule_btn.grid(row=len(self.sub_rules) + 2, column=0, sticky = 'w')
         self.sub_rules.append(sub_rule)
+
+    def add_rule_below(self):
+        """
+        Adds a rule directly below (at the same indentation)
+        """
+        owner = self.owner
+        if owner is None:
+            return
+        if isinstance(owner, TestCreationPage):
+            rules_list = owner.rules_list
+            tk_parent = owner
+            bottom_btn = owner.rule_btn
+        elif isinstance(owner, _RulesFrame):
+            rules_list = owner.sub_rules
+            tk_parent = owner.sub_rules_container
+            sel = owner.selected_option.get()
+            if sel == 'If':
+                bottom_btn = owner.add_if_sub_rule_btn
+            elif sel == 'Loop':
+                bottom_btn = owner.add_loop_sub_rule_btn
+            elif sel == 'Else':
+                bottom_btn = owner.add_else_sub_rule_btn
+        idx = rules_list.index(self)
+        new_rule = _RulesFrame(tk_parent, indent_level=self.indent_level, owner = owner)
+        rules_list.insert(idx+1, new_rule)
+        for i, rule in enumerate(rules_list, start = 1):
+            rule.rule_frame.grid(row = i, column = 0, sticky = 'w')
+
+        bottom_btn.grid(row = len(rules_list) + 1, column=0, sticky = 'w')
 
     def add_conditions_row(self):
         row = _ConditionRow(self.if_container, self.on_logic_change)

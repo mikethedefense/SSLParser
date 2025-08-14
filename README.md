@@ -8,4 +8,4 @@ This application was used by engineers for running simulation test scripts on a 
 The goal of this project was to begin the development of an automatic testing pipeline. 
 
 # Note
-Certain functions like "Prompt" were pre-defined by the developer in the SSL codebase. 
+Certain functions like "Prompt", "Log", and 'Init' were pre-defined by the developer in the SSL codebase. 
