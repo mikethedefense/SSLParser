@@ -5,6 +5,7 @@ import json
 import sys
 import os
 
+# TODO: fix the loading function
 # TODO: add database functionality (look-up tables)
 
 class App: # Master Controller
