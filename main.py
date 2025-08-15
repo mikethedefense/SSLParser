@@ -103,10 +103,10 @@ class App: # Master Controller
 
         elif rule_type == 'Prompt':
             p = rule_frame.prompt.get()
-            return {"type": "Prompt", "prompt": p}, f'{prefix}prompt("{p}", "{name}.txt");\n'
+            return {"type": "Prompt", "prompt": p}, f'{prefix}prompt("{p}", "{name}.log");\n'
         elif rule_type == 'Log':
             lg = rule_frame.log_str.get()
-            return {"type": "Log", "log": lg }, f'{prefix}logger("{lg}", "{name}.txt");\n'
+            return {"type": "Log", "log": lg }, f'{prefix}logger("{lg}", "{name}.log");\n'
 
 
         elif rule_type in ('If', 'Exit When'):
@@ -322,7 +322,7 @@ class TestCreationPage(Frame):
             elif isinstance(page, TestCreationPage):
                 config_data = {"rules": []}
                 code_string += f'\n-- Config {page.index + 1}\n'
-                code_string += f'init("{data['location']}", {data['state']});\n'
+                code_string += f'init_sim("{data['location']}", {data['state']}, "{data['procedure_name']}.log");\n'
 
                 for i, rule in enumerate(page.rules_list):
                     next_rule = page.rules_list[i+1] if i+1 < len(page.rules_list) else None
@@ -412,7 +412,7 @@ class _RulesFrame:
         self.del_btn = Button(self.rule_frame, text='Delete', command=self.delete_rule)
         self.add_rule_below_btn = Button(self.rule_frame, text = 'Add Rule Below', command = self.add_rule_below)
 
-        # ----Rules----
+        # ----Rules---
 
         # Set
         self.signal_entry_variable = StringVar()
@@ -447,6 +447,7 @@ class _RulesFrame:
 
         # Loop
         self.add_loop_sub_rule_btn = Button(self.sub_rules_container, text='Add Loop Sub-Rule',command=self.add_loop_sub_rule)
+
 
         # Trace
         self.selected_option.trace_add('write', callback = self.selector_callback)
