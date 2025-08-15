@@ -10,7 +10,7 @@ import os
 class App: # Master Controller
     def __init__(self,master):
         self.master = master
-        master.title('AutoScript')
+        master.title('AutoScript Beta')
         master.geometry('1000x1000')
         master.resizable(True, True)
 
@@ -308,7 +308,7 @@ class TestCreationPage(Frame):
 
         for page in self.controller.frames.values():
             code_string = (
-                'if file_exist("base.ssi") then\n'
+                'if (file_exist("base.ssi")) then\n'
                 '\tinclude "base.ssi";\n'
                 'end if;\n'
             )
