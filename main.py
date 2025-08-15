@@ -5,7 +5,6 @@ import json
 import sys
 import os
 
-# TODO: fix the loading function
 # TODO: add database functionality (look-up tables)
 
 class App: # Master Controller
@@ -39,6 +38,7 @@ class App: # Master Controller
             if rule['type'] == 'Set':
                 rf.signal_entry_variable.set(rule['signal'])
                 rf.sig_val_entry_variable.set(rule['value'])
+                rf.var_type.set(rule['var_type'])
 
             elif rule['type'] == 'Wait':
                 rf.wait_time.set(rule['wait_time'])
@@ -50,14 +50,18 @@ class App: # Master Controller
 
             elif rule['type'] in ('If', 'Exit When'):
                 # Load conditions
+                rf._loading = True
+                required = len(rule['conditions'])
+                while len(rf.conditions) < required:
+                    rf.add_conditions_row()
                 for j, cond_data in enumerate(rule['conditions']):
-                    if j > 0:
-                        rf.add_conditions_row()
                     cond_row = rf.conditions[j]
                     cond_row.var_name.set(cond_data['variable'])
                     cond_row.operator.set(cond_data['operator'])
                     cond_row.value.set(cond_data['value'])
                     cond_row.logic_op.set(cond_data['logic_op'])
+                rf._loading = False
+                rf.update_condition_delete_buttons()
                 # Load sub-rules recursively
                 if 'sub_rules' in rule:
                     rf.sub_rules = self.load_rules_from_data(rf.sub_rules_container, rule['sub_rules'], indent + 1, owner = rf)
@@ -164,7 +168,7 @@ class App: # Master Controller
             sub_code = ""
             for idx,sr in enumerate(rule_frame.sub_rules):
                 next_sr = rule_frame.sub_rules[idx + 1] if idx + 1 < len(rule_frame.sub_rules) else None
-                sj,sc = self.export_rule_to_json_and_ssi(sr, next_sr, indent + 1)
+                sj,sc = self.export_rule_to_json_and_ssi(sr, name,next_sr, indent + 1)
                 sub_json.append(sj)
                 sub_code += sc
             return {'type': 'Else', 'sub_rules': sub_json}, f'{prefix}else\n{sub_code}{prefix}end if;\n'
@@ -390,6 +394,7 @@ class _RulesFrame:
         self.owner = owner
         self.sub_rules = []
         self.conditions = []
+        self._loading = False
 
         # Variables
         self.options = options
@@ -536,23 +541,44 @@ class _RulesFrame:
         bottom_btn.grid(row = len(rules_list) + 1, column=0, sticky = 'w')
 
     def add_conditions_row(self):
-        row = _ConditionRow(self.if_container, self.on_logic_change)
+        row = _ConditionRow(self.if_container, self.on_logic_change, self.delete_condition)
         self.conditions.append(row)
         row.set_grid(row = 0, column = len(self.conditions)-1)
+        self.update_condition_delete_buttons()
 
     def on_logic_change(self,row):
+        if self._loading:
+            return
         if row is self.conditions[-1] and row.logic_op.get() in ('AND', 'OR'):
             self.add_conditions_row()
 
     def delete_rule(self):
+        if isinstance(self.owner, TestCreationPage ):
+            parent_list = self.owner.rules_list
+        elif isinstance(self.owner, _RulesFrame):
+            parent_list = self.owner.sub_rules
+        if self in parent_list:
+            parent_list.remove(self)
         self.rule_frame.destroy()
-
+    def delete_condition(self, row):
+        if len(self.conditions) > 1:
+            self.conditions.remove(row)
+            row.frame.destroy()
+            for idx, cond in enumerate(self.conditions):
+                if len(self.conditions) == 1:
+                    cond.logic_op.set('')
+                cond.set_grid(row=0, column=idx)
+        self.update_condition_delete_buttons()
+    def update_condition_delete_buttons(self):
+        show_delete = len(self.conditions) > 1
+        for cond in self.conditions:
+            cond.set_delete_visible(show_delete)
 
 class _ConditionRow:
     """
     Private class used to define the boolean logic for conditionals (and loops)
     """
-    def __init__(self, parent, on_logic_change): # on_logic_change is the callback function for the trace
+    def __init__(self, parent, on_logic_change, on_delete): # on_logic_change is the callback function for the trace
         self.frame = Frame(parent)
         self.operator = StringVar(value = "Equals")
         self.logic_op = StringVar(value = "")
@@ -564,9 +590,16 @@ class _ConditionRow:
         Entry(self.frame, textvariable=self.value, width=10).grid(row=0, column=2)
         OptionMenu(self.frame, self.logic_op, "", "AND", "OR").grid(row=0, column=3)
 
+        self.delete_btn = Button(self.frame, text = 'X', command = lambda: on_delete(self))
+
         self.logic_op.trace_add('write', lambda *a: on_logic_change(self))
     def set_grid(self, **kwargs):
         self.frame.grid(**kwargs)
+    def set_delete_visible(self, visible):
+        if visible:
+            self.delete_btn.grid(row = 0, column = 4)
+        else:
+            self.delete_btn.grid_forget()
 
 root = Tk()
 app_instance = App(root)
